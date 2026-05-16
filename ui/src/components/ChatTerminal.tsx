@@ -135,10 +135,12 @@ export default function ChatTerminal({ sessionId }: Props) {
           // Check if it's a JSON control message
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'output') {
-              term.write(msg.data);
-            } else if (msg.type === 'status') {
-              term.writeln(`\x1b[2m${msg.message}\x1b[0m`);
+            if (msg.type === 'data') {
+              term.write(msg.text);
+            } else if (msg.type === 'error') {
+              term.writeln(`\x1b[31m✗ ${msg.message}\x1b[0m`);
+            } else if (msg.type === 'exit') {
+              term.writeln(`\x1b[33m! Session closed (exit: ${msg.code})\x1b[0m`);
             }
           } catch {
             // Plain text - write to terminal
@@ -154,7 +156,7 @@ export default function ChatTerminal({ sessionId }: Props) {
 
       ws.onerror = () => {
         term.writeln('\x1b[31m✗ WebSocket connection error\x1b[0m');
-        term.writeln('\x1b[2mMake sure Hermes Dashboard is running: \x1b[35mhermes dashboard\x1b[0m');
+        term.writeln('\x1b[2mMake sure backend is running: \x1b[35mnode server/index.js\x1b[0m');
       };
     } catch (e) {
       term.writeln(`\x1b[31m✗ Failed to connect: ${(e as Error).message}\x1b[0m`);

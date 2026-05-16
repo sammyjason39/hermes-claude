@@ -1,5 +1,5 @@
 {
-  "name": "hermes-claude-proxy",
+  "name": "hermes-claude-backend",
   "version": "1.0.0",
   "type": "module",
   "private": true,
@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.21.0"
+    "express": "^4.21.0",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
   }
 }

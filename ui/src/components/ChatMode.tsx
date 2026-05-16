@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getSessions, timeAgo } from '../api/hermes';
 import type { SessionSummary } from '../types/hermes';
-import { Search, Send, Plus, MessageSquare, Cable, Clock, Puzzle } from 'lucide-react';
+import { Search, Send, Plus, MessageSquare, Cable, Clock, Puzzle, Zap } from 'lucide-react';
 import Connectors from './Connectors';
 import CronJobs from './CronJobs';
 import SkillsPanel from './SkillsPanel';
@@ -17,10 +17,19 @@ export default function ChatMode() {
   const [messages, setMessages] = useState<Array<{role: string; content: string}>>([
     { role: 'assistant', content: 'Hello! I\'m Hermes Claude. How can I help you today?' }
   ]);
+  const [streaming, setStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getSessions(0, 50).then(setSessions).catch(() => {});
   }, []);
+
+  // Auto-scroll ke bawah
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, streamingText]);
 
   const filteredSessions = sessions.filter(s =>
     (s.title || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -33,19 +42,94 @@ export default function ChatMode() {
     { id: 'skills' as View, label: 'Skills', icon: Puzzle },
   ];
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
+  const handleSend = async () => {
+    if (!inputValue.trim() || streaming) return;
     const text = inputValue.trim();
-    setMessages(prev => [...prev, { role: 'user', content: text }]);
     setInputValue('');
 
-    // Simulate assistant response
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `You said: "${text}". Responses will flow through Hermes WebSocket when connected.`
-      }]);
-    }, 500);
+    // Add user message
+    setMessages(prev => [...prev, { role: 'user', content: text }]);
+
+    // Start streaming
+    setStreaming(true);
+    setStreamingText('');
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          session_id: activeSession,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        setMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${res.status} ${res.statusText}` }]);
+        setStreaming(false);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '❌ Failed to read response stream' }]);
+        setStreaming(false);
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'chunk') {
+                fullText += data.text;
+                setStreamingText(fullText);
+              } else if (data.type === 'done') {
+                // Response complete
+                setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
+                setStreamingText('');
+                setStreaming(false);
+                if (data.session_id) setActiveSession(data.session_id);
+                return;
+              } else if (data.type === 'error') {
+                setMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${data.message}` }]);
+                setStreamingText('');
+                setStreaming(false);
+                return;
+              }
+            } catch { /* skip malformed JSON */ }
+          }
+        }
+      }
+
+      // Fallback: if stream ended without 'done'
+      if (fullText) {
+        setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setMessages(prev => [...prev, { role: 'assistant', content: `❌ Connection error: ${err.message}` }]);
+      }
+    }
+
+    setStreamingText('');
+    setStreaming(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -61,7 +145,10 @@ export default function ChatMode() {
       <div className="chat-sidebar">
         <div className="chat-sidebar-header">
           <span>Hermes</span>
-          <button className="chat-new-btn">
+          <button className="chat-new-btn" onClick={() => {
+            setActiveSession(null);
+            setMessages([{ role: 'assistant', content: 'Hello! I\'m Hermes Claude. How can I help you today?' }]);
+          }}>
             <Plus size={13} style={{ marginRight: 2 }} /> New
           </button>
         </div>
@@ -136,6 +223,27 @@ export default function ChatMode() {
                 </div>
               </div>
             ))}
+            {/* Streaming indicator */}
+            {streaming && streamingText && (
+              <div className="chat-message assistant">
+                <div className="chat-avatar assistant">✦</div>
+                <div className="chat-bubble assistant">
+                  {streamingText}
+                  <span className="typing-cursor">▊</span>
+                </div>
+              </div>
+            )}
+            {streaming && !streamingText && (
+              <div className="chat-message assistant">
+                <div className="chat-avatar assistant">✦</div>
+                <div className="chat-bubble assistant">
+                  <span className="typing-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                  </span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
@@ -148,9 +256,10 @@ export default function ChatMode() {
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
               rows={1}
+              disabled={streaming}
             />
-            <button className="chat-input-send" onClick={handleSend}>
-              <Send size={14} />
+            <button className="chat-input-send" onClick={handleSend} disabled={streaming || !inputValue.trim()}>
+              {streaming ? <Zap size={14} /> : <Send size={14} />}
             </button>
           </div>
         </div>
