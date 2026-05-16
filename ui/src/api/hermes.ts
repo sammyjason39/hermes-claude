@@ -26,18 +26,34 @@ export async function getStatus() {
 }
 
 // --- Sessions ---
+// Map Hermes Dashboard API fields → our frontend types
+function mapSession(raw: any): SessionSummary {
+  return {
+    session_id: raw.id || raw.session_id || '',
+    title: raw.title && raw.title !== 'None' ? raw.title : (raw.preview?.substring(0, 60) || 'New conversation'),
+    platform: raw.source || raw.platform || 'cli',
+    model: raw.model || '',
+    message_count: raw.message_count || 0,
+    tool_call_count: raw.tool_call_count || 0,
+    token_count: raw.input_tokens || raw.token_count || 0,
+    created_at: raw.created_at || raw.started_at || '',
+    last_activity: raw.last_active || raw.updated_at || raw.last_activity || raw.created_at || raw.started_at || '',
+    is_active: raw.is_active ?? false,
+  };
+}
+
 export async function getSessions(offset = 0, limit = 50): Promise<SessionSummary[]> {
-  const data = await fetchJSON<{ sessions: SessionSummary[] }>(
+  const data = await fetchJSON<{ sessions: any[] }>(
     `${API_BASE}/sessions?offset=${offset}&limit=${limit}`
   );
-  return data.sessions || [];
+  return (data.sessions || []).map(mapSession);
 }
 
 export async function searchSessions(query: string): Promise<SessionSummary[]> {
-  const data = await fetchJSON<{ sessions: SessionSummary[] }>(
+  const data = await fetchJSON<{ sessions: any[] }>(
     `${API_BASE}/sessions/search?q=${encodeURIComponent(query)}`
   );
-  return data.sessions || [];
+  return (data.sessions || []).map(mapSession);
 }
 
 export async function getSessionMessages(id: string): Promise<SessionMessage[]> {
@@ -104,16 +120,6 @@ export async function saveConfig(config: Record<string, unknown>): Promise<void>
   });
 }
 
-// --- Token ---
-export async function getHermesToken(): Promise<string | null> {
-  try {
-    const data = await fetchJSON<{ token: string }>(`${API_BASE}/token`);
-    return data.token;
-  } catch {
-    return null;
-  }
-}
-
 // --- WebSocket PTY ---
 export function connectPtyWebSocket(): WebSocket {
   return new WebSocket(`ws://localhost:3001/api/pty`);
@@ -121,14 +127,22 @@ export function connectPtyWebSocket(): WebSocket {
 
 // Helper: format relative time
 export function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const date = new Date(dateStr).getTime();
-  const diff = now - date;
+  if (!dateStr) return 'recently';
+  let date: number;
+  // Handle Unix timestamp (seconds since epoch)
+  if (/^\d+(\.\d+)?$/.test(dateStr)) {
+    date = parseFloat(dateStr) * 1000;
+  } else {
+    date = new Date(dateStr).getTime();
+  }
+  if (isNaN(date)) return 'recently';
+  const diff = Date.now() - date;
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
 }
