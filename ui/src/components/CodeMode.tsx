@@ -1,19 +1,20 @@
 import { useState } from 'react';
 import {
   Database, Clock, Cable, Puzzle, Settings,
-  PanelLeftOpen, PanelLeftClose, Plus,
+  PanelLeftOpen, PanelLeftClose, ExternalLink,
 } from 'lucide-react';
 import SessionList from './SessionList';
 import Connectors from './Connectors';
 import CronJobs from './CronJobs';
 import SkillsPanel from './SkillsPanel';
 import ConfigPanel from './ConfigPanel';
-import ChatTerminal from './ChatTerminal';
+
+const TERMUL_URL = 'http://localhost:8080';
 
 type View = 'sessions' | 'connectors' | 'cron' | 'skills' | 'config';
 
 export default function CodeMode() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [view, setView] = useState<View>('sessions');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
@@ -35,11 +36,8 @@ export default function CodeMode() {
       {sidebarOpen && (
         <div className="code-sidebar">
           <div className="code-sidebar-header">
-            <span>Sessions</span>
+            <span>Hermes</span>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button className="code-new-session-btn">
-                <Plus size={12} style={{ marginRight: 2 }} /> New
-              </button>
               <button className="btn-icon" onClick={() => setSidebarOpen(false)} title="Close sidebar">
                 <PanelLeftClose size={14} />
               </button>
@@ -77,7 +75,7 @@ export default function CodeMode() {
           onClick={() => setSidebarOpen(true)}
           style={{
             position: 'fixed', left: 8, top: 52, zIndex: 100,
-            background: 'var(--code-surface)', border: '1px solid var(--code-border)',
+            background: 'var(--surface)', border: '1px solid var(--border)',
             padding: 6,
           }}
         >
@@ -85,9 +83,34 @@ export default function CodeMode() {
         </button>
       )}
 
-      {/* Main Terminal Area */}
+      {/* Main: Termul iframe */}
       <div className="code-main">
-        <ChatTerminal sessionId={selectedSessionId} />
+        <div className="code-toolbar">
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
+            Termul — Terminal Manager
+          </span>
+          <a
+            href={TERMUL_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="code-toolbar-tab"
+            style={{ marginLeft: 'auto', textDecoration: 'none' }}
+          >
+            <ExternalLink size={12} />
+            Open in new tab
+          </a>
+        </div>
+        <iframe
+          src={TERMUL_URL}
+          style={{
+            flex: 1,
+            width: '100%',
+            border: 'none',
+            background: '#000',
+          }}
+          title="Termul"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
       </div>
     </div>
   );
