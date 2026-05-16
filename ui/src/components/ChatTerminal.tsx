@@ -46,7 +46,7 @@ export default function ChatTerminal({ sessionId }: Props) {
       theme: {
         background: '#0a0a0b',
         foreground: '#e8e8ea',
-        cursor: '#6c5ce7',
+        cursor: '#c15f3c',
         selectionBackground: '#3a3a4e',
         black: '#0a0a0b',
         red: '#ff5252',
